@@ -1,0 +1,23 @@
+{
+  "name": "viewkomen",
+  "version": "1.0.0",
+  "description": "viewkomen adalah software yang berguna untuk memantau komentar dari live tiktok",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "viewkomen",
+    "tiktok",
+    "ariszulwafa",
+    "tiktoklive"
+  ],
+  "author": "ariszulwafa",
+  "license": "ISC",
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3",
+    "tiktok-live-connector": "^2.1.1-beta1"
+  }
+}
