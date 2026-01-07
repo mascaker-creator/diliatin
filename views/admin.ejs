@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ADMIN SUPER PRO | WAFA MONITOR</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --black: #000000;
+            --white: #ffffff;
+            --shadow-main: 8px 8px 0px 0px rgba(0,0,0,1);
+            --shadow-sm: 4px 4px 0px 0px rgba(0,0,0,1);
+        }
+
+        body { 
+            font-family: 'Quicksand', sans-serif; 
+            background: #fdfdfd; 
+            color: var(--black); 
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        h1, h2, h3, .font-pro { font-family: 'Poppins', sans-serif; }
+
+        .brutal-card {
+            background: var(--white);
+            border: 4px solid var(--black);
+            box-shadow: var(--shadow-main);
+            transition: all 0.2s;
+        }
+
+        .brutal-btn {
+            background: var(--black);
+            color: var(--white);
+            border: 4px solid var(--black);
+            box-shadow: var(--shadow-sm);
+            cursor: pointer;
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .brutal-btn:active:not(:disabled) {
+            box-shadow: 0px 0px 0px 0px rgba(0,0,0,1);
+            transform: translate(4px, 4px);
+        }
+
+        .brutal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .brutal-input {
+            border: 4px solid var(--black);
+            box-shadow: var(--shadow-sm);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .brutal-input:focus {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+        }
+
+        .status-pill {
+            padding: 4px 12px;
+            border: 2px solid #000;
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: translateY(20px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
+
+        .glow-active {
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+
+    <div id="loginSection" class="fixed inset-0 z-[9999] bg-[#fafafa] flex items-center justify-center p-6">
+        <div class="w-full max-w-sm brutal-card p-10 bg-white fade-in text-center">
+            <div class="mb-8">
+                <div class="inline-block bg-yellow-400 border-4 border-black px-4 py-1 mb-4 rotate-[-3deg]">
+                    <span class="font-900 text-xs tracking-widest uppercase">Admin System</span>
+                </div>
+                <h1 class="text-4xl font-900 tracking-tighter uppercase italic leading-none">Super Pro</h1>
+            </div>
+            <div class="space-y-5">
+                <input type="password" id="adminPass" placeholder="MASUKKAN PASSWORD" 
+                    class="brutal-input w-full p-5 text-center font-bold text-lg uppercase">
+                <button onclick="attemptLogin()" id="btnLogin" class="brutal-btn w-full p-5 font-900 text-sm tracking-widest uppercase">
+                    AUTHENTICATE
+                </button>
+            </div>
+            <p class="mt-8 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Akses terbatas hanya untuk administrator resmi</p>
+        </div>
+    </div>
+
+    <div id="adminDashboard" style="display: none;" class="max-w-7xl mx-auto">
+        <header class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-8 border-b-8 border-black pb-10">
+            <div>
+                <h1 class="text-5xl md:text-6xl font-900 tracking-tighter uppercase leading-none italic">Admin Control</h1>
+                <div class="flex items-center gap-3 mt-4">
+                    <span class="status-pill bg-green-400">System Live</span>
+                    <span class="status-pill bg-blue-400">Database Connected</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button onclick="location.reload()" class="w-14 h-14 brutal-card flex items-center justify-center hover:bg-yellow-300">
+                    <i class="fa-solid fa-sync text-xl"></i>
+                </button>
+                <button onclick="location.href='/'" class="h-14 px-8 brutal-btn font-900 text-sm uppercase italic tracking-widest">
+                    LOGOUT SYSTEM
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 xl:grid-cols-4 gap-10">
+            <div class="xl:col-span-3 space-y-12">
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div class="brutal-card p-6 bg-yellow-300">
+                        <p class="text-[10px] font-900 uppercase opacity-60">Monitoring</p>
+                        <p id="statActive" class="text-5xl font-900 italic">0</p>
+                        <p class="text-[9px] font-bold mt-2 uppercase tracking-tighter">Sesi Berjalan</p>
+                    </div>
+                    <div class="brutal-card p-6 bg-white">
+                        <p class="text-[10px] font-900 uppercase opacity-60">Total Visitor</p>
+                        <p id="statTotal" class="text-5xl font-900 italic">0</p>
+                        <p class="text-[9px] font-bold mt-2 uppercase tracking-tighter">Database IP</p>
+                    </div>
+                    <div class="brutal-card p-6 bg-red-500 text-white">
+                        <p class="text-[10px] font-900 uppercase opacity-60">Blacklist</p>
+                        <p id="statBlocked" class="text-5xl font-900 italic">0</p>
+                        <p class="text-[9px] font-bold mt-2 uppercase tracking-tighter">IP Terblokir</p>
+                    </div>
+                    <div class="brutal-card p-6 bg-black text-white">
+                        <p class="text-[10px] font-900 uppercase opacity-60">Status</p>
+                        <p class="text-2xl font-900 uppercase mt-2">Perfect</p>
+                        <p class="text-[9px] font-bold mt-2 uppercase tracking-tighter text-green-400">V.2.0 Stable</p>
+                    </div>
+                </div>
+
+                <section>
+                    <div class="flex items-center gap-4 mb-8">
+                        <div class="h-8 w-2 bg-black"></div>
+                        <h2 class="font-900 text-2xl uppercase tracking-tight">Monitoring Sesi Real-Time</h2>
+                    </div>
+                    <div id="liveFeed" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        </div>
+                </section>
+            </div>
+
+            <aside class="space-y-8">
+                <div class="brutal-card bg-white flex flex-col h-[700px]">
+                    <div class="p-6 border-b-4 border-black bg-zinc-100 flex justify-between items-center">
+                        <h3 class="font-900 text-lg uppercase">IP Management</h3>
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div id="dbList" class="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar bg-gray-50">
+                        </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        // --- AUTH LOGIC ---
+        function attemptLogin() {
+            const pass = document.getElementById('adminPass').value;
+            const btn = document.getElementById('btnLogin');
+            if(!pass) return;
+            
+            btn.innerText = "AUTHENTICATING...";
+            btn.disabled = true;
+            socket.emit('admin_login', pass);
+        }
+
+        socket.on('login_res', (res) => {
+            const btn = document.getElementById('btnLogin');
+            if(res.success) {
+                document.getElementById('loginSection').style.display = 'none';
+                const dash = document.getElementById('adminDashboard');
+                dash.style.display = 'block';
+                dash.classList.add('fade-in');
+            } else {
+                alert("ACCESS DENIED: PASSWORD SALAH!");
+                btn.innerText = "AUTHENTICATE";
+                btn.disabled = false;
+            }
+        });
+
+        // --- REAL-TIME UPDATES ---
+        socket.on('admin_update_list', (data) => {
+            const sessions = data.liveSessions || [];
+            const users = data.allUsers || [];
+
+            // Update Analytics
+            document.getElementById('statActive').innerText = sessions.length;
+            document.getElementById('statTotal').innerText = users.length;
+            document.getElementById('statBlocked').innerText = users.filter(u => u.isBlocked).length;
+
+            // Update Live Feed
+            const liveFeed = document.getElementById('liveFeed');
+            if(sessions.length === 0) {
+                liveFeed.innerHTML = `
+                    <div class="col-span-full border-4 border-dashed border-gray-300 p-12 text-center">
+                        <p class="font-900 text-gray-400 uppercase tracking-widest">Tidak Ada Sesi Monitoring Aktif</p>
+                    </div>`;
+            } else {
+                liveFeed.innerHTML = sessions.map(s => `
+                    <div class="brutal-card p-6 bg-white fade-in relative overflow-hidden">
+                        <div class="flex justify-between items-start mb-6">
+                            <div class="w-8 h-8 bg-green-500 border-2 border-black animate-pulse"></div>
+                            <span class="font-900 text-[10px] bg-black text-white px-2 py-1">${s.uptime || '0m'}</span>
+                        </div>
+                        <p class="text-[10px] font-900 uppercase text-gray-400 mb-1">Target Monitoring</p>
+                        <h4 class="text-2xl font-900 tracking-tighter uppercase italic italic mb-6 break-all">@${s.target}</h4>
+                        <div class="pt-4 border-t-2 border-black flex flex-col gap-1">
+                            <span class="text-[9px] font-black uppercase text-gray-400">User Address</span>
+                            <span class="text-xs font-900">${s.ip}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Update IP List
+            const dbList = document.getElementById('dbList');
+            dbList.innerHTML = users.map(u => `
+                <div class="brutal-card p-4 bg-white shadow-[3px_3px_0px_0px_#000] transition-all">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="min-w-0">
+                            <p class="text-[8px] font-900 uppercase text-gray-400">IP Identifier</p>
+                            <p class="text-[11px] font-900 truncate">${u.ip}</p>
+                        </div>
+                        <span class="status-pill ${u.isBlocked ? 'bg-red-500 text-white' : 'bg-blue-400'}">
+                            ${u.isBlocked ? 'Blocked' : 'Trial'}
+                        </span>
+                    </div>
+                    <button onclick="toggleBlock('${u.ip}')" 
+                        class="w-full py-2 brutal-btn text-[9px] font-900 uppercase ${u.isBlocked ? 'bg-black text-white' : 'bg-white !text-black'}">
+                        ${u.isBlocked ? '<i class="fa-solid fa-unlock"></i> Buka Blokir' : '<i class="fa-solid fa-ban"></i> Blokir Akses'}
+                    </button>
+                </div>
+            `).join('');
+        });
+
+        function toggleBlock(ip) {
+            if(confirm(`Konfirmasi perubahan status akses untuk IP: ${ip}?`)) {
+                socket.emit('admin_toggle_block', ip);
+            }
+        }
+    </script>
+</body>
+</html>
