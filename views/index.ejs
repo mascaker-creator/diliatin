@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WafaMonitor Pro - Sistem Monitoring</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --black: #000000;
+            --white: #ffffff;
+            --shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+            --shadow-sm: 4px 4px 0px 0px rgba(0,0,0,1);
+        }
+
+        body { 
+            font-family: 'Quicksand', sans-serif; 
+            background: #f0f0f0; 
+            color: var(--black); 
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1, h2, .font-bold-pro, .comment-text { font-family: 'Poppins', sans-serif; }
+
+        .brutal-card {
+            background: var(--white);
+            border: 3px solid var(--black);
+            box-shadow: var(--shadow);
+        }
+
+        .brutal-btn {
+            background: var(--black);
+            color: var(--white);
+            border: 3px solid var(--black);
+            box-shadow: var(--shadow-sm);
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+
+        .brutal-btn:active:not(:disabled) {
+            box-shadow: 0px 0px 0px 0px rgba(0,0,0,1);
+            transform: translate(4px, 4px);
+        }
+
+        .brutal-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .brutal-input {
+            border: 3px solid var(--black);
+            box-shadow: var(--shadow-sm);
+            outline: none;
+        }
+
+        .comment-text { font-size: clamp(0.95rem, 3vw, 1.2rem); line-height: 1.4; font-weight: 800; }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* Animasi Transisi */
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: translateY(10px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
+
+        #statPanel { transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .dragging { opacity: 0.9; scale: 1.02; cursor: grabbing !important; z-index: 9999; }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <div id="customModal" class="hidden fixed inset-0 bg-white/90 backdrop-blur-md flex items-center justify-center p-6 z-[10000]">
+        <div class="w-full max-w-sm brutal-card p-8 flex flex-col items-center text-center">
+            <div class="w-16 h-16 border-4 border-black flex items-center justify-center mb-4 bg-red-400 shadow-[4px_4px_0px_0px_#000]">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+            </div>
+            <h2 class="text-xl font-900 uppercase mb-2">Sistem Error</h2>
+            <p id="modalMessage" class="text-sm font-bold text-gray-600 mb-6"></p>
+            <button onclick="closeModal()" class="w-full py-4 brutal-btn font-900 uppercase">OK, MENGERTI</button>
+        </div>
+    </div>
+
+    <section id="setupView" class="fixed inset-0 z-[100] bg-[#fafafa] flex flex-col items-center justify-center p-8">
+        <div class="w-full max-w-sm fade-in">
+            <div class="mb-10 text-center">
+                <div class="inline-block brutal-card bg-yellow-400 px-4 py-1 mb-4 rotate-[-2deg]">
+                    <span class="font-900 text-xs tracking-widest uppercase">Diliatin.</span>
+                </div>
+            </div>
+            
+            <div class="space-y-5">
+                <input type="text" id="targetInput" placeholder="USERNAME TIKTOK" class="w-full p-5 font-bold brutal-input text-lg uppercase">
+                <button onclick="startMonitor()" id="btnStart" class="w-full p-5 brutal-btn font-900 text-sm tracking-widest uppercase flex items-center justify-center gap-3">
+                    <span id="btnText">HUBUNGKAN SEKARANG</span>
+                    <div id="btnLoader" class="hidden w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section id="monitorView" class="hidden fixed inset-0 flex-col bg-white">
+        <header class="h-[85px] px-6 border-b-4 border-black flex justify-between items-center bg-white z-[50]">
+            <div class="flex items-center gap-4">
+                <button onclick="location.reload()" class="w-10 h-10 border-2 border-black flex items-center justify-center bg-white shadow-[2px_2px_0px_0px_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div>
+                    <h2 id="displayUser" class="font-900 text-lg md:text-xl tracking-tight leading-none uppercase">@USER</h2>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <p id="vCount" class="text-[9px] font-bold uppercase tracking-widest">Live Aktif</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="toggleAudio()" id="audioBtn" class="w-10 h-10 border-2 border-black flex items-center justify-center shadow-[2px_2px_0px_0px_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]">
+                    <i id="audioIcon" class="fa-solid fa-volume-xmark text-sm"></i>
+                </button>
+                <button onclick="clearChat()" class="w-10 h-10 border-2 border-black flex items-center justify-center shadow-[2px_2px_0px_0px_#000] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]">
+                    <i class="fa-solid fa-trash-can text-sm"></i>
+                </button>
+            </div>
+        </header>
+
+        <main id="chatBox" class="flex-1 overflow-y-auto px-4 py-6 no-scrollbar bg-[#f9f9f9] relative">
+            <div id="chatContainer" class="flex flex-col max-w-2xl mx-auto space-y-4 pb-20"></div>
+        </main>
+
+        <aside id="statPanel" class="fixed top-24 right-4 w-[280px] brutal-card z-[999] flex flex-col overflow-hidden">
+            <div id="dragHeader" class="bg-black text-white p-3 cursor-move flex justify-between items-center select-none">
+                <span class="text-[9px] font-900 tracking-widest uppercase flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line text-yellow-400"></i> Statistik
+                </span>
+                <button onclick="togglePanel()" class="w-5 h-5 flex items-center justify-center border border-white/30">
+                    <i id="toggleIcon" class="fa-solid fa-minus text-[10px]"></i>
+                </button>
+            </div>
+            <div id="panelContent" class="p-4 space-y-4">
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="bg-blue-50 border-2 border-black p-2">
+                        <p class="text-[8px] font-bold uppercase">Chat</p>
+                        <p id="cCount" class="text-xl font-900">0</p>
+                    </div>
+                    <div class="bg-pink-50 border-2 border-black p-2">
+                        <p class="text-[8px] font-bold uppercase">Gift</p>
+                        <p id="gCount" class="text-xl font-900">0</p>
+                    </div>
+                </div>
+                <div id="giftFeed" class="space-y-2 max-h-[120px] overflow-y-auto no-scrollbar">
+                    <p class="text-[9px] font-bold text-gray-400 text-center uppercase py-2 italic">Menunggu Gift...</p>
+                </div>
+            </div>
+        </aside>
+    </section>
+
+    <script>
+        const socket = io();
+        let isAudio = false, cTotal = 0, gTotal = 0, monitorActive = false, isCollapsed = false;
+
+        function showModal(msg) {
+            document.getElementById('modalMessage').innerText = msg;
+            document.getElementById('customModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('customModal').classList.add('hidden');
+            location.reload();
+        }
+
+        function startMonitor() {
+            const user = document.getElementById('targetInput').value.trim();
+            if(!user) return;
+
+            // Loading state
+            const btn = document.getElementById('btnStart');
+            document.getElementById('btnText').innerText = "MENYAMBUNGKAN...";
+            document.getElementById('btnLoader').classList.remove('hidden');
+            btn.disabled = true;
+            
+            socket.emit('start_monitoring', user);
+        }
+
+        function switchToMonitor(user) {
+            monitorActive = true;
+            // Penting: Hapus hidden dan paksa display flex
+            const setup = document.getElementById('setupView');
+            const monitor = document.getElementById('monitorView');
+            
+            setup.classList.add('hidden');
+            monitor.classList.remove('hidden');
+            monitor.style.display = 'flex'; // Paksa display flex
+            
+            document.getElementById('displayUser').innerText = "@" + user;
+        }
+
+        socket.on('connection_status', (data) => {
+            if(data.success) {
+                const user = document.getElementById('targetInput').value.trim();
+                switchToMonitor(user);
+            } else {
+                showModal(data.msg || "Gagal menyambung ke TikTok. Cek apakah user sedang Live.");
+                resetButton();
+            }
+        });
+
+        function resetButton() {
+            document.getElementById('btnText').innerText = "HUBUNGKAN SEKARANG";
+            document.getElementById('btnLoader').classList.add('hidden');
+            document.getElementById('btnStart').disabled = false;
+        }
+
+        socket.on('server_new_chat', (data) => {
+            cTotal++;
+            document.getElementById('cCount').innerText = cTotal.toLocaleString();
+            const container = document.getElementById('chatContainer');
+            const row = document.createElement('div');
+            row.className = 'p-4 bg-white border-2 border-black shadow-[3px_3px_0px_0px_#000] flex items-start gap-3 fade-in';
+            row.innerHTML = `
+                <img src="${data.profilePic}" class="w-10 h-10 border-2 border-black flex-shrink-0 grayscale">
+                <div class="flex-1 min-w-0">
+                    <p class="text-[9px] font-900 text-blue-600 uppercase mb-1">@${data.username}</p>
+                    <p class="comment-text text-black">${data.comment}</p>
+                </div>
+            `;
+            container.appendChild(row);
+            const box = document.getElementById('chatBox');
+            box.scrollTop = box.scrollHeight;
+
+            if(isAudio) {
+                const s = new SpeechSynthesisUtterance(data.comment);
+                s.lang = 'id-ID';
+                window.speechSynthesis.speak(s);
+            }
+            if(container.children.length > 30) container.removeChild(container.firstChild);
+        });
+
+        socket.on('server_new_gift', (data) => {
+            gTotal += data.count;
+            document.getElementById('gCount').innerText = gTotal.toLocaleString();
+            const feed = document.getElementById('giftFeed');
+            if(feed.querySelector('p.italic')) feed.innerHTML = '';
+            
+            const g = document.createElement('div');
+            g.className = 'p-2 bg-yellow-400 border-2 border-black flex items-center gap-2 shadow-[2px_2px_0px_0px_#000] fade-in';
+            g.innerHTML = `
+                <img src="${data.giftIcon}" class="w-6 h-6">
+                <div class="overflow-hidden">
+                    <p class="text-[8px] font-900 truncate">@${data.username}</p>
+                    <p class="text-[9px] font-900 italic leading-none">${data.giftName} x${data.count}</p>
+                </div>
+            `;
+            feed.prepend(g);
+        });
+
+        socket.on('server_update_viewers', (data) => {
+            document.getElementById('vCount').innerText = data.count.toLocaleString() + " Penonton";
+        });
+
+        // --- Panel & Drag Logic ---
+        function togglePanel() {
+            const content = document.getElementById('panelContent');
+            const panel = document.getElementById('statPanel');
+            const icon = document.getElementById('toggleIcon');
+            isCollapsed = !isCollapsed;
+            content.classList.toggle('hidden');
+            panel.style.width = isCollapsed ? "150px" : "280px";
+            icon.className = isCollapsed ? "fa-solid fa-plus text-[10px]" : "fa-solid fa-minus text-[10px]";
+        }
+
+        const panel = document.getElementById("statPanel");
+        const header = document.getElementById("dragHeader");
+        let p1 = 0, p2 = 0, p3 = 0, p4 = 0;
+
+        header.onmousedown = (e) => dStart(e);
+        header.ontouchstart = (e) => dStart(e);
+
+        function dStart(e) {
+            e = e || window.event;
+            p3 = (e.type === "touchstart") ? e.touches[0].clientX : e.clientX;
+            p4 = (e.type === "touchstart") ? e.touches[0].clientY : e.clientY;
+            panel.classList.add('dragging');
+            document.onmouseup = dEnd;
+            document.ontouchend = dEnd;
+            document.onmousemove = dMove;
+            document.ontouchmove = dMove;
+        }
+
+        function dMove(e) {
+            e = e || window.event;
+            const cx = (e.type === "touchmove") ? e.touches[0].clientX : e.clientX;
+            const cy = (e.type === "touchmove") ? e.touches[0].clientY : e.clientY;
+            p1 = p3 - cx; p2 = p4 - cy; p3 = cx; p4 = cy;
+            panel.style.top = (panel.offsetTop - p2) + "px";
+            panel.style.left = (panel.offsetLeft - p1) + "px";
+            panel.style.right = "auto";
+        }
+
+        function dEnd() {
+            panel.classList.remove('dragging');
+            document.onmouseup = null; document.onmousemove = null;
+            document.ontouchend = null; document.ontouchmove = null;
+        }
+
+        function toggleAudio() {
+            isAudio = !isAudio;
+            const btn = document.getElementById('audioBtn');
+            const icon = document.getElementById('audioIcon');
+            btn.classList.toggle('bg-black');
+            btn.classList.toggle('text-white');
+            icon.className = isAudio ? "fa-solid fa-volume-high" : "fa-solid fa-volume-xmark";
+        }
+
+        function clearChat() { document.getElementById('chatContainer').innerHTML = ''; }
+    </script>
+</body>
+</html>
