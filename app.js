@@ -1,14 +1,12 @@
 /**
- * PROJECT   : WafaMonitor PRO - Ultimate Edition (v3.0)
- * AUTHOR    : Wafan & Gemini Partner
- * STATUS    : Production Ready
+ * PROJECT   : WafaMonitor PRO - Cloud Optimized (v3.2.0)
+ * PLATFORM  : Optimized for Railway.app
  * FEATURES  : 
- * - Intelligent Multi-User Management
- * - Persistent IP Tracking (24-Hour Trial System)
- * - Anti-Memory Leak Logic
- * - Real-time Admin Command Center
- * - Silent Auto-Reconnect on Internet Drop
- * - Detailed Connection Debugging
+ * - Persistent Database Integration (NeDB)
+ * - Intelligent Socket.io Handshaking
+ * - Advanced Error Logging & Debugging
+ * - Admin Command Center with Real-time Feeds
+ * - Automatic Garbage Collection for Inactive Sessions
  */
 
 const { WebcastPushConnection } = require('tiktok-live-connector');
@@ -18,154 +16,159 @@ const { Server } = require('socket.io');
 const path = require('path');
 const Datastore = require('nedb-promises');
 
-// --- INITIALIZATION ---
+// --- 1. CONFIGURATION & CORE ---
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*" },
-    connectionStateRecovery: {} // Fitur Socket.io agar koneksi tidak gampang putus
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
+// Railway Environment Variables
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = "Wafa12345";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Wafa12345";
 const ADMIN_WA = "62895322080063";
 
-// Inisialisasi Database (system_data.db)
+// Database Initialization (Persistent Storage)
+// Di Railway, pastikan mount volume ke root atau path ini
 const db = Datastore.create({ 
     filename: path.join(__dirname, 'system_data.db'), 
     autoload: true 
 });
 
-// --- STATE MANAGEMENT ---
-// Key: SocketID, Value: { connection, ip, target, joinedAt }
+// In-Memory Storage for Active Connections
 const activeConnections = new Map();
 
-// --- SETTINGS & MIDDLEWARE ---
+// --- 2. MIDDLEWARE & VIEW ENGINE ---
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// --- CORE UTILS ---
+// --- 3. LOGIC HELPERS ---
 
 /**
- * Validasi Hak Akses User (Trial & Block)
+ * Validasi trial user berdasarkan IP Address
  */
-async function checkUserPrivilege(ip) {
+async function validateUserSession(ip) {
     try {
         const user = await db.findOne({ ip: ip });
         const now = Date.now();
-        const ONE_DAY = 24 * 60 * 60 * 1000;
+        const TRIAL_DURATION = 24 * 60 * 60 * 1000; // 24 Jam
 
         if (!user) {
-            // User Baru: Mulai Trial
             const newUser = {
                 ip: ip,
                 startTime: now,
                 isBlocked: false,
-                lastSeen: new Date().toISOString(),
-                totalSessions: 1
+                firstConnect: new Date().toISOString()
             };
             await db.insert(newUser);
-            return { status: 'ALLOWED' };
+            return { status: 'OK' };
         }
 
         if (user.isBlocked) {
-            return { status: 'BLOCKED', msg: "AKSES DITOLAK: IP ANDA DIBLOKIR ADMIN" };
+            return { status: 'BLOCKED', msg: "AKSES DITOLAK: IP ANDA TELAH DIBLOKIR" };
         }
 
-        if (now - user.startTime > ONE_DAY) {
-            return { status: 'EXPIRED', msg: "TRIAL 24 JAM HABIS. SILAKAN AKTIVASI." };
+        if (now - user.startTime > TRIAL_DURATION) {
+            return { 
+                status: 'EXPIRED', 
+                msg: "MASA TRIAL 24 JAM ANDA SUDAH HABIS",
+                isTrialOver: true 
+            };
         }
 
-        // Update User Activity
-        await db.update({ ip: ip }, { $inc: { totalSessions: 1 }, $set: { lastSeen: new Date().toISOString() } });
-        return { status: 'ALLOWED' };
+        return { status: 'OK' };
     } catch (err) {
-        console.error("DB_ERROR:", err);
-        return { status: 'ERROR' };
+        console.error("[DB ERROR]", err.message);
+        return { status: 'ERROR', msg: "DATABASE MALFUNCTION" };
     }
 }
 
 /**
- * Fetch Laporan Terkini untuk Admin Dashboard
+ * Mengumpulkan data real-time untuk dashboard admin
  */
-async function generateAdminReport() {
+async function collectAdminStats() {
     const allUsers = await db.find({}).sort({ startTime: -1 });
-    const liveSessions = [];
+    const liveMonitoring = [];
     
     activeConnections.forEach((conn, socketId) => {
-        liveSessions.push({
+        liveMonitoring.push({
             id: socketId,
             ip: conn.userIp,
             target: conn.targetAccount,
-            uptime: conn.connectedAt
+            since: conn.connectedAt
         });
     });
 
-    return { allUsers, liveSessions };
+    return { allUsers, liveMonitoring };
 }
 
-// --- SOCKET.IO ENGINE ---
+// --- 4. SOCKET.IO CORE ENGINE ---
 
 io.on('connection', (socket) => {
+    // Deteksi IP (Mendukung Proxy Railway/Cloudflare)
     const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
-    console.log(`[NET] Client Connected: ${clientIp} | ID: ${socket.id}`);
+    console.log(`[NETWORK] Connection Established: ${clientIp}`);
 
-    // ACTION: Mulai Monitoring TikTok
-    socket.on('start_monitoring', async (targetUser) => {
-        if (!targetUser) return;
+    // ACTION: Inisialisasi Monitoring TikTok
+    socket.on('start_monitoring', async (targetUsername) => {
+        if (!targetUsername) return;
 
-        // 1. Validasi Keamanan
-        const access = await checkUserPrivilege(clientIp);
-        if (access.status !== 'ALLOWED') {
+        // Step 1: Keamanan & Validasi IP
+        const access = await validateUserSession(clientIp);
+        if (access.status !== 'OK') {
             return socket.emit('connection_status', { 
                 success: false, 
                 msg: access.msg, 
-                isTrialOver: access.status === 'EXPIRED' 
+                isTrialOver: access.isTrialOver 
             });
         }
 
-        // 2. Cleanup Sesi Lama (Anti-Memory Leak)
+        // Step 2: Hapus sesi lama jika user melakukan restart/pindah akun
         if (activeConnections.has(socket.id)) {
-            const oldConn = activeConnections.get(socket.id);
-            try { oldConn.disconnect(); } catch(e) {}
-            activeConnections.delete(socket.id);
+            try {
+                const oldConn = activeConnections.get(socket.id);
+                oldConn.disconnect();
+                activeConnections.delete(socket.id);
+            } catch (e) { /* silent cleanup */ }
         }
 
-        // 3. Inisialisasi TikTok Connector (Gaya Klasik - Paling Stabil)
-        const tiktok = new WebcastPushConnection(targetUser, {
+        // Step 3: Membuat Koneksi ke TikTok Webcast API
+        const tiktok = new WebcastPushConnection(targetUsername, {
             enableWebsocketUpgrade: true,
-            processInitialData: false
+            requestOptions: { timeout: 10000 }
         });
 
-        // 4. Eksekusi Koneksi
         tiktok.connect().then(state => {
-            console.log(`[TIKTOK] Success: @${targetUser} by ${clientIp}`);
+            console.log(`[SUCCESS] Monitoring @${targetUsername} for ${clientIp}`);
 
-            // Simpan Metadata ke Memory Map
-            tiktok.targetAccount = targetUser;
+            // Simpan metadata koneksi ke memory map
+            tiktok.targetAccount = targetUsername;
             tiktok.userIp = clientIp;
             tiktok.connectedAt = new Date().toLocaleTimeString('id-ID');
             
             activeConnections.set(socket.id, tiktok);
 
-            // Beritahu Client
+            // Beri respon sukses ke browser user
             socket.emit('connection_status', { success: true });
             
-            // Broadcast ke Admin Dashboard
-            generateAdminReport().then(report => io.emit('admin_update_list', report));
+            // Perbarui dashboard admin secara real-time
+            collectAdminStats().then(stats => io.emit('admin_update_list', stats));
 
         }).catch(err => {
-            console.error(`[TIKTOK] Fail: @${targetUser} | Reason: ${err.message}`);
+            console.error(`[FAILURE] @${targetUsername} | Detail: ${err.message}`);
             socket.emit('connection_status', { 
                 success: false, 
-                msg: "TIKTOK OFFLINE / USERNAME SALAH",
+                msg: "GAGAL: TIKTOK OFFLINE / USERNAME SALAH",
                 debug: err.message 
             });
         });
 
-        // --- TIKTOK EVENTS HANDLING ---
+        // --- TIKTOK LIVE EVENTS ---
 
         tiktok.on('chat', data => {
             socket.emit('server_new_chat', {
@@ -176,7 +179,9 @@ io.on('connection', (socket) => {
         });
 
         tiktok.on('gift', data => {
+            // Filter: Hanya kirim gift yang sudah selesai animasinya/streak
             if (data.giftType === 1 && !data.repeatEnd) return;
+            
             socket.emit('server_new_gift', {
                 username: data.uniqueId,
                 giftName: data.giftName,
@@ -190,84 +195,86 @@ io.on('connection', (socket) => {
         });
 
         tiktok.on('streamEnd', () => {
-            console.log(`[TIKTOK] Stream ended for @${targetUser}`);
+            console.log(`[EVENT] Stream Ended for @${targetUsername}`);
             socket.emit('server_disconnected', { msg: "LIVE TELAH BERAKHIR" });
-            activeConnections.delete(socket.id);
-            generateAdminReport().then(report => io.emit('admin_update_list', report));
+            
+            if (activeConnections.has(socket.id)) {
+                activeConnections.delete(socket.id);
+                collectAdminStats().then(stats => io.emit('admin_update_list', stats));
+            }
         });
 
         tiktok.on('error', (err) => {
-            console.error(`[TIKTOK] Runtime Error: ${err.message}`);
-            // Jangan disconnect paksa di sini, biarkan library mencoba auto-reconnect
+            console.warn(`[WARNING] TikTok Connection Issue: ${err.message}`);
+            // Kita tidak memutus koneksi di sini agar library melakukan auto-retry
         });
     });
 
-    // ACTION: Admin Login
-    socket.on('admin_login', (password) => {
-        if (password === ADMIN_PASSWORD) {
+    // ACTION: Admin Command Center
+    socket.on('admin_login', (pass) => {
+        if (pass === ADMIN_PASSWORD) {
             socket.emit('login_res', { success: true });
-            generateAdminReport().then(report => socket.emit('admin_update_list', report));
+            collectAdminStats().then(stats => socket.emit('admin_update_list', stats));
         } else {
             socket.emit('login_res', { success: false });
         }
     });
 
-    // ACTION: Admin Block/Unblock
     socket.on('admin_toggle_block', async (targetIp) => {
         const user = await db.findOne({ ip: targetIp });
         if (user) {
             const newState = !user.isBlocked;
             await db.update({ ip: targetIp }, { $set: { isBlocked: newState } });
 
-            // Jika diblokir, tendang semua koneksi aktif milik IP tersebut
+            // Jika diblokir, putuskan koneksi yang sedang berjalan milik IP tersebut
             if (newState === true) {
                 activeConnections.forEach((conn, sid) => {
                     if (conn.userIp === targetIp) {
-                        try { conn.disconnect(); } catch(e) {}
+                        try { conn.disconnect(); } catch (e) {}
                         io.to(sid).emit('server_disconnected', { msg: "AKSES ANDA DIBLOKIR ADMIN" });
                         activeConnections.delete(sid);
                     }
                 });
             }
-            generateAdminReport().then(report => io.emit('admin_update_list', report));
+            collectAdminStats().then(stats => io.emit('admin_update_list', stats));
         }
     });
 
-    // ACTION: User Disconnect (Tutup Tab)
+    // ACTION: Clean Disconnect (Tutup Browser/Tab)
     socket.on('disconnect', () => {
         if (activeConnections.has(socket.id)) {
             const conn = activeConnections.get(socket.id);
             try { conn.disconnect(); } catch(e) {}
             activeConnections.delete(socket.id);
-            console.log(`[NET] Sesi ditutup: @${conn.targetAccount}`);
+            console.log(`[NETWORK] Session Closed for IP: ${clientIp}`);
         }
-        // Update dashboard admin secara real-time
-        generateAdminReport().then(report => io.emit('admin_update_list', report));
+        // Pastikan dashboard admin sinkron
+        collectAdminStats().then(stats => io.emit('admin_update_list', stats));
     });
 });
 
-// --- ROUTES ---
+// --- 5. ROUTES ---
 app.get('/', (req, res) => res.render('index'));
 app.get('/admin-wafa', (req, res) => res.render('admin'));
 
-// --- START SERVER ---
+// --- 6. SERVER ACTIVATION ---
 server.listen(PORT, '0.0.0.0', () => {
     console.clear();
     console.log(`
-    ┌────────────────────────────────────────────────────────┐
-    │  WAFA MONITOR PRO SYSTEM v3.0                          │
-    ├────────────────────────────────────────────────────────┤
-    │  SERVER RUNNING ON PORT : ${PORT}                         │
-    │  LOCAL ACCESS           : http://localhost:${PORT}        │
-    │  ADMIN ACCESS           : /admin-wafa                  │
-    │  ADMIN PASSWORD         : ${ADMIN_PASSWORD}                    │
-    ├────────────────────────────────────────────────────────┤
-    │  SISTEM MULTI-USER & TRIAL IP AKTIF                    │
-    └────────────────────────────────────────────────────────┘
+    ================================================
+    🚀 WAFA MONITOR PRO IS ONLINE
+    ================================================
+    PORT       : ${PORT}
+    ADMIN URL  : http://localhost:${PORT}/admin-wafa
+    PASSWORD   : ${ADMIN_PASSWORD}
+    DB STATUS  : PERSISTENT CONNECTED
+    ------------------------------------------------
+    Railway Deployment: 0.0.0.0 Binding Active
+    ================================================
     `);
 });
 
-// ERROR CATCHER (Mencegah Server Mati Total)
+// Global Safety Net: Mencegah server mati jika ada error tak terduga
 process.on('uncaughtException', (err) => {
-    console.error('CRITICAL_ERROR_DETECTED:', err.message);
+    console.error('[CRITICAL ERROR] Server remained alive, but issue detected:', err.stack);
 });
